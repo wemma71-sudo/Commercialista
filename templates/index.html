@@ -74,6 +74,41 @@
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
         }
 
+        select {
+            padding: 12px 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .ambiente-row {
+            margin-top: 24px;
+            display: none;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .ambiente-row label {
+            margin-bottom: 0;
+        }
+
+        .ambiente-row select {
+            flex: 1;
+        }
+
+        .ambiente-prod {
+            border-color: #dc2626 !important;
+            color: #b91c1c;
+            font-weight: 600;
+        }
+
         button {
             padding: 12px 20px;
             border: none;
@@ -128,6 +163,12 @@
         .button-group {
             display: flex;
             gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .button-group > button {
+            flex: 1 1 130px;
+            min-width: 130px;
         }
 
         .btn-output {
@@ -152,6 +193,28 @@
             cursor: not-allowed;
         }
 
+        .btn-private {
+            flex: 1;
+            background: linear-gradient(135deg, #4f46e5 0%, #2563eb 100%);
+            color: white;
+            padding: 14px;
+            font-size: 16px;
+        }
+
+        .btn-private:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(79, 70, 229, 0.4);
+        }
+
+        .btn-private:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .btn-private:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
         .btn-passive {
             flex: 1;
             background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
@@ -172,6 +235,63 @@
         .btn-passive:disabled {
             opacity: 0.6;
             cursor: not-allowed;
+        }
+
+        .btn-ts {
+            flex: 1;
+            background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+            color: white;
+            padding: 14px;
+            font-size: 16px;
+        }
+
+        .btn-ts:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(14, 165, 233, 0.4);
+        }
+
+        .btn-ts:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .btn-ts:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-invia {
+            flex: 1;
+            background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+            color: white;
+            padding: 14px;
+            font-size: 16px;
+        }
+
+        .btn-invia:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(220, 38, 38, 0.4);
+        }
+
+        .btn-invia:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .btn-invia:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-ricevuta {
+            flex: 1;
+            background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%);
+            color: white;
+            padding: 14px;
+            font-size: 16px;
+        }
+
+        .btn-ricevuta:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(13, 148, 136, 0.4);
         }
 
         .status-box {
@@ -321,12 +441,36 @@
                 </div>
             </div>
 
+            <div class="form-group">
+                <label for="privateFolderInput">Cartella di input fatture private:</label>
+                <div class="input-group">
+                    <input 
+                        type="text" 
+                        id="privateFolderInput" 
+                        placeholder="C:\Users\...\fatture_private"
+                    >
+                    <button type="button" class="btn-browse" id="browsePrivateBtn">Sfoglia...</button>
+                </div>
+            </div>
+
             <button type="submit" class="btn-run" id="runBtn">Elabora Fatture Attive</button>
         </form>
 
+        <div class="ambiente-row" id="tsAmbienteRow">
+            <label for="ambienteSelect">Ambiente invio TS:</label>
+            <select id="ambienteSelect">
+                <option value="produzione" {% if ts_ambiente == 'produzione' %}selected{% endif %}>Produzione (invio reale)</option>
+                <option value="test" {% if ts_ambiente != 'produzione' %}selected{% endif %}>Test (prova)</option>
+            </select>
+        </div>
+
         <div class="button-group" id="buttonGroup" style="display: none; margin-top: 24px;">
             <button type="button" class="btn-output" id="openOutputBtn">📂 Apri file output</button>
+            <button type="button" class="btn-private" id="processPrivateBtn">📋 Elabora Fatture Private</button>
             <button type="button" class="btn-passive" id="processPassiveBtn">📋 Elabora Passive</button>
+            <button type="button" class="btn-ts" id="outputTsBtn">📄 Output TS</button>
+            <button type="button" class="btn-invia" id="inviaTsBtn">📤 Invia a Sistema TS</button>
+            <button type="button" class="btn-ricevuta" id="openRicevutaBtn" style="display: none;">🧾 Apri ricevuta</button>
         </div>
 
         <div id="statusBox" class="status-box">
@@ -343,13 +487,21 @@
     <script>
         const folderInput = document.getElementById('folderInput');
         const templateFolderInput = document.getElementById('templateFolderInput');
+        const privateFolderInput = document.getElementById('privateFolderInput');
         const browseBtn = document.getElementById('browseBtn');
         const browseTemplateBtn = document.getElementById('browseTemplateBtn');
+        const browsePrivateBtn = document.getElementById('browsePrivateBtn');
         const pipelineForm = document.getElementById('pipelineForm');
         const runBtn = document.getElementById('runBtn');
         const buttonGroup = document.getElementById('buttonGroup');
         const openOutputBtn = document.getElementById('openOutputBtn');
+        const processPrivateBtn = document.getElementById('processPrivateBtn');
         const processPassiveBtn = document.getElementById('processPassiveBtn');
+        const outputTsBtn = document.getElementById('outputTsBtn');
+        const inviaTsBtn = document.getElementById('inviaTsBtn');
+        const openRicevutaBtn = document.getElementById('openRicevutaBtn');
+        const ambienteSelect = document.getElementById('ambienteSelect');
+        const tsAmbienteRow = document.getElementById('tsAmbienteRow');
         const statusBox = document.getElementById('statusBox');
         const statusTitle = document.getElementById('statusTitle');
         const statusMessage = document.getElementById('statusMessage');
@@ -358,6 +510,20 @@
 
         let currentOutputFile = '';
         let currentInputFolder = '';
+        let currentPrivateFolder = '';
+        let currentRicevutaFile = '';
+        let privateStepCompleted = false;
+
+        // Evidenzia in rosso il selettore quando è impostata la produzione (invio reale)
+        function aggiornaAmbienteStile() {
+            if (ambienteSelect.value === 'produzione') {
+                ambienteSelect.classList.add('ambiente-prod');
+            } else {
+                ambienteSelect.classList.remove('ambiente-prod');
+            }
+        }
+        ambienteSelect.addEventListener('change', aggiornaAmbienteStile);
+        aggiornaAmbienteStile();
 
         // Carica i dati salvati da localStorage
         window.addEventListener('load', () => {
@@ -368,6 +534,10 @@
             const savedTemplateFolder = localStorage.getItem('lastTemplateFolder');
             if (savedTemplateFolder) {
                 templateFolderInput.value = savedTemplateFolder;
+            }
+            const savedPrivateFolder = localStorage.getItem('lastPrivateFolder');
+            if (savedPrivateFolder) {
+                privateFolderInput.value = savedPrivateFolder;
             }
         });
 
@@ -419,12 +589,41 @@
             }
         });
 
+        // Tasto Sfoglia Private
+        browsePrivateBtn.addEventListener('click', async () => {
+            browsePrivateBtn.disabled = true;
+            try {
+                const response = await fetch('/api/browse-folder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type: 'private' })
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    privateFolderInput.value = data.folder;
+                    localStorage.setItem('lastPrivateFolder', data.folder);
+                    currentPrivateFolder = data.folder;
+                    if (buttonGroup.style.display === 'flex') {
+                        processPrivateBtn.disabled = false;
+                    }
+                } else {
+                    showStatus('error', 'Errore', data.error);
+                }
+            } catch (error) {
+                showStatus('error', 'Errore', 'Impossibile aprire il dialogo di selezione cartella');
+            } finally {
+                browsePrivateBtn.disabled = false;
+            }
+        });
+
         // Invio del form
         pipelineForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const folder = folderInput.value.trim();
             const templateFolder = templateFolderInput.value.trim();
+            const privateFolder = privateFolderInput.value.trim();
             
             if (!folder) {
                 showStatus('error', 'Errore', 'Per favore inserisci una cartella di input');
@@ -439,19 +638,25 @@
             // Salva le cartelle
             localStorage.setItem('lastFolder', folder);
             localStorage.setItem('lastTemplateFolder', templateFolder);
+            if (privateFolder) {
+                localStorage.setItem('lastPrivateFolder', privateFolder);
+            }
             
-            // Salva la cartella di input per il pulsante passive
             currentInputFolder = folder;
+            currentPrivateFolder = privateFolder;
+            privateStepCompleted = false;
 
             // Nascondi messaggi precedenti
             statusBox.style.display = 'none';
             outputSection.style.display = 'none';
             buttonGroup.style.display = 'none';
+            tsAmbienteRow.style.display = 'none';
 
             // Disabilita i bottoni
             runBtn.disabled = true;
             browseBtn.disabled = true;
             browseTemplateBtn.disabled = true;
+            browsePrivateBtn.disabled = true;
 
             try {
                 // Invia richiesta di esecuzione
@@ -471,6 +676,7 @@
                     runBtn.disabled = false;
                     browseBtn.disabled = false;
                     browseTemplateBtn.disabled = false;
+                    browsePrivateBtn.disabled = false;
                     return;
                 }
 
@@ -503,24 +709,46 @@
                     runBtn.disabled = false;
                     browseBtn.disabled = false;
                     browseTemplateBtn.disabled = false;
+                    browsePrivateBtn.disabled = false;
 
                     if (data.success) {
                         showStatus('success', '✅ Pipeline completato!', 'L\'elaborazione è terminata con successo');
                         if (data.output_file) {
                             currentOutputFile = data.output_file;
-                            buttonGroup.style.display = 'block';
+                            buttonGroup.style.display = 'flex';
+                            openOutputBtn.disabled = false;
+                            processPrivateBtn.disabled = !currentPrivateFolder;
+                            processPassiveBtn.disabled = true;
+                            outputTsBtn.disabled = false;
+                            inviaTsBtn.disabled = true;
+                            openRicevutaBtn.style.display = 'none';
+                            tsAmbienteRow.style.display = 'flex';
                         }
                     } else if (data.status === 'warning') {
                         showStatus('warning', '⚠️ Pipeline completato con avvisi', data.error || 'Pipeline terminato con avvisi');
                         if (data.output_file) {
                             currentOutputFile = data.output_file;
-                            buttonGroup.style.display = 'block';
+                            buttonGroup.style.display = 'flex';
+                            openOutputBtn.disabled = false;
+                            processPrivateBtn.disabled = !currentPrivateFolder;
+                            processPassiveBtn.disabled = true;
+                            outputTsBtn.disabled = false;
+                            inviaTsBtn.disabled = true;
+                            openRicevutaBtn.style.display = 'none';
+                            tsAmbienteRow.style.display = 'flex';
                         }
                     } else {
                         showStatus('error', '❌ Errore', data.error || 'Pipeline terminato con errore');
                         if (data.output_file) {
                             currentOutputFile = data.output_file;
-                            buttonGroup.style.display = 'block';
+                            buttonGroup.style.display = 'flex';
+                            openOutputBtn.disabled = false;
+                            processPrivateBtn.disabled = !currentPrivateFolder;
+                            processPassiveBtn.disabled = true;
+                            outputTsBtn.disabled = false;
+                            inviaTsBtn.disabled = true;
+                            openRicevutaBtn.style.display = 'none';
+                            tsAmbienteRow.style.display = 'flex';
                         }
                     }
 
@@ -569,6 +797,55 @@
             }
         });
 
+        // Bottone Elabora Fatture Private
+        processPrivateBtn.addEventListener('click', async () => {
+            if (!currentOutputFile) {
+                showStatus('error', 'Errore', 'Nessun file di output disponibile');
+                return;
+            }
+
+            if (!currentPrivateFolder) {
+                showStatus('error', 'Errore', 'Cartella di input fatture private non disponibile');
+                return;
+            }
+
+            // Disabilita i bottoni
+            openOutputBtn.disabled = true;
+            processPrivateBtn.disabled = true;
+            processPassiveBtn.disabled = true;
+
+            try {
+                showStatus('info', '⏳ Elaborazione fatture private in corso...', 'Attendere prego...');
+
+                const response = await fetch('/api/process-private', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        private_folder: currentPrivateFolder,
+                        output_file: currentOutputFile
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!data.success) {
+                    showStatus('error', 'Errore', data.error);
+                    openOutputBtn.disabled = false;
+                    processPrivateBtn.disabled = false;
+                    processPassiveBtn.disabled = true;
+                    return;
+                }
+
+                checkPrivateStatus();
+
+            } catch (error) {
+                showStatus('error', 'Errore', error.message);
+                openOutputBtn.disabled = false;
+                processPrivateBtn.disabled = false;
+                processPassiveBtn.disabled = true;
+            }
+        });
+
         // Bottone Elabora Passive
         processPassiveBtn.addEventListener('click', async () => {
             if (!currentOutputFile) {
@@ -578,6 +855,11 @@
 
             if (!currentInputFolder) {
                 showStatus('error', 'Errore', 'Cartella di input non disponibile');
+                return;
+            }
+
+            if (!privateStepCompleted) {
+                showStatus('error', 'Errore', 'Esegui prima l\'elaborazione delle fatture private');
                 return;
             }
 
@@ -616,6 +898,221 @@
             }
         });
 
+        // Bottone Output TS
+        outputTsBtn.addEventListener('click', async () => {
+            if (!currentOutputFile) {
+                showStatus('error', 'Errore', 'Nessun file di output disponibile');
+                return;
+            }
+
+            // Disabilita i bottoni
+            openOutputBtn.disabled = true;
+            processPrivateBtn.disabled = true;
+            processPassiveBtn.disabled = true;
+            outputTsBtn.disabled = true;
+
+            try {
+                showStatus('info', '⏳ Generazione Output TS in corso...', 'Attendere prego...');
+
+                const response = await fetch('/api/output-ts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        output_file: currentOutputFile
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!data.success) {
+                    showStatus('error', 'Errore', data.error);
+                    openOutputBtn.disabled = false;
+                    outputTsBtn.disabled = false;
+                    return;
+                }
+
+                checkOutputTsStatus();
+
+            } catch (error) {
+                showStatus('error', 'Errore', error.message);
+                openOutputBtn.disabled = false;
+                outputTsBtn.disabled = false;
+            }
+        });
+
+        // Bottone Invia a Sistema TS
+        inviaTsBtn.addEventListener('click', async () => {
+            if (!currentOutputFile) {
+                showStatus('error', 'Errore', 'Nessun file di output disponibile');
+                return;
+            }
+
+            const ambiente = ambienteSelect.value;
+            const messaggioConferma = ambiente === 'produzione'
+                ? '⚠️ INVIO IN PRODUZIONE\n\nI dati di Isabella verranno trasmessi REALMENTE al Sistema Tessera Sanitaria. Procedere?'
+                : 'Invio in ambiente di TEST (dati fittizi, nessuna conseguenza reale). Procedere?';
+            if (!confirm(messaggioConferma)) {
+                return;
+            }
+
+            openOutputBtn.disabled = true;
+            processPrivateBtn.disabled = true;
+            processPassiveBtn.disabled = true;
+            outputTsBtn.disabled = true;
+            inviaTsBtn.disabled = true;
+            openRicevutaBtn.style.display = 'none';
+
+            try {
+                showStatus('info', '⏳ Invio al Sistema TS in corso...', 'Generazione, trasmissione e attesa esito. Attendere prego...');
+
+                const response = await fetch('/api/invia-ts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ output_file: currentOutputFile, ambiente: ambiente })
+                });
+
+                const data = await response.json();
+
+                if (!data.success) {
+                    showStatus('error', 'Errore', data.error);
+                    openOutputBtn.disabled = false;
+                    outputTsBtn.disabled = false;
+                    inviaTsBtn.disabled = false;
+                    return;
+                }
+
+                checkInviaTsStatus();
+
+            } catch (error) {
+                showStatus('error', 'Errore', error.message);
+                openOutputBtn.disabled = false;
+                outputTsBtn.disabled = false;
+                inviaTsBtn.disabled = false;
+            }
+        });
+
+        function checkInviaTsStatus() {
+            const checkInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/check-status');
+                    const data = await response.json();
+
+                    if (data.status === 'running') {
+                        return;
+                    }
+
+                    clearInterval(checkInterval);
+                    openOutputBtn.disabled = false;
+                    outputTsBtn.disabled = false;
+                    inviaTsBtn.disabled = false;
+                    processPrivateBtn.disabled = !currentPrivateFolder;
+                    processPassiveBtn.disabled = !privateStepCompleted;
+
+                    // Se è disponibile la ricevuta, mostra il pulsante per aprirla
+                    if (data.ricevuta_file) {
+                        currentRicevutaFile = data.ricevuta_file;
+                        openRicevutaBtn.style.display = 'block';
+                        openRicevutaBtn.disabled = false;
+                    }
+
+                    if (data.success) {
+                        showStatus('success', '✅ Invio accolto', data.message || 'Invio completato con successo');
+                    } else if (data.status === 'completed') {
+                        // Trasmesso ma non accolto (es. scarto): mostra esito + ricevuta
+                        showStatus('warning', '⚠️ Invio trasmesso ma non accolto', data.message || 'Controlla la ricevuta');
+                    } else {
+                        showStatus('error', '❌ Errore', data.error || 'Invio terminato con errore');
+                    }
+
+                } catch (error) {
+                    // Continua a controllare in caso di errore
+                }
+            }, 500);
+        }
+
+        // Bottone Apri ricevuta
+        openRicevutaBtn.addEventListener('click', async () => {
+            if (!currentRicevutaFile) {
+                showStatus('error', 'Errore', 'Nessuna ricevuta disponibile');
+                return;
+            }
+            openRicevutaBtn.disabled = true;
+            try {
+                const response = await fetch('/api/open-file', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ file_path: currentRicevutaFile })
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    showStatus('error', 'Errore', data.error);
+                }
+            } catch (error) {
+                showStatus('error', 'Errore', error.message);
+            } finally {
+                openRicevutaBtn.disabled = false;
+            }
+        });
+
+        function checkOutputTsStatus() {
+            const checkInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/check-status');
+                    const data = await response.json();
+
+                    if (data.status === 'running') {
+                        return;
+                    }
+
+                    clearInterval(checkInterval);
+                    openOutputBtn.disabled = false;
+                    outputTsBtn.disabled = false;
+                    processPrivateBtn.disabled = !currentPrivateFolder;
+                    processPassiveBtn.disabled = !privateStepCompleted;
+                    inviaTsBtn.disabled = !data.success;
+
+                    if (data.success) {
+                        showStatus('success', '✅ Output TS generato!', data.message || 'Generazione completata con successo');
+                    } else {
+                        showStatus('error', '❌ Errore', data.error || 'Generazione terminata con errore');
+                    }
+
+                } catch (error) {
+                    // Continua a controllare in caso di errore
+                }
+            }, 500);
+        }
+
+        function checkPrivateStatus() {
+            const checkInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/check-status');
+                    const data = await response.json();
+
+                    if (data.status === 'running') {
+                        return;
+                    }
+
+                    clearInterval(checkInterval);
+                    openOutputBtn.disabled = false;
+                    processPrivateBtn.disabled = false;
+                    processPassiveBtn.disabled = false;
+
+                    if (data.success) {
+                        privateStepCompleted = true;
+                        processPassiveBtn.disabled = false;
+                        showStatus('success', '✅ Fatture private elaborate!', data.message || 'Elaborazione completata con successo');
+                    } else {
+                        showStatus('error', '❌ Errore', data.error || 'Elaborazione terminata con errore');
+                        processPassiveBtn.disabled = true;
+                    }
+
+                } catch (error) {
+                    // Continua a controllare in caso di errore
+                }
+            }, 500);
+        }
+
         function checkPassiveStatus() {
             const checkInterval = setInterval(async () => {
                 try {
@@ -623,7 +1120,6 @@
                     const data = await response.json();
 
                     if (data.status === 'running') {
-                        // Continua a controllare
                         return;
                     }
 
