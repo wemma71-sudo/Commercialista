@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pipeline Fatture</title>
+    <title></title>
     <style>
         * {
             margin: 0;
@@ -267,11 +267,31 @@
             border-color: #86efac;
             color: #166534;
         }
+
+        .top-right-link {
+            position: fixed;
+            top: 18px;
+            right: 18px;
+            z-index: 10;
+            font-size: 14px;
+            color: #ffffff;
+            background: rgba(0, 0, 0, 0.18);
+            padding: 10px 14px;
+            border-radius: 999px;
+            text-decoration: none;
+            transition: background 0.2s ease, transform 0.2s ease;
+        }
+
+        .top-right-link:hover {
+            background: rgba(255, 255, 255, 0.18);
+            transform: translateY(-1px);
+        }
     </style>
 </head>
 <body>
+    <a class="top-right-link" href="https://studio-balestra.vercel.app/" target="_blank" rel="noopener noreferrer">Studio Balestra</a>
     <div class="container">
-        <h1>🔄 Pipeline Fatture</h1>
+        <h1>🔄 Gestione invio mensile al commercialista </h1>
         <p class="subtitle">Elabora le fatture dalla cartella selezionata</p>
 
         <form id="pipelineForm">
@@ -301,7 +321,7 @@
                 </div>
             </div>
 
-            <button type="submit" class="btn-run" id="runBtn">Elabora Attive</button>
+            <button type="submit" class="btn-run" id="runBtn">Elabora Fatture Attive</button>
         </form>
 
         <div class="button-group" id="buttonGroup" style="display: none; margin-top: 24px;">
