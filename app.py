@@ -4,6 +4,7 @@ Web application per eseguire run_pipeline.py con gestione template Excel
 Fornisce un'interfaccia web con selezione cartella e esecuzione pipeline
 """
 
+import base64
 import subprocess
 import sys
 from pathlib import Path
@@ -400,76 +401,88 @@ def copy_data_excluding_header_to_clipboard(excel_path: Path) -> None:
         pythoncom.CoUninitialize()
 
 
-import re
-import json
-import urllib.request
+def _importo_per_cella(valore):
+    """Converte l'importo estratto in un numero per la cella Excel.
+
+    Mantiene il formato numerico del template. Se il valore è 'NA' o non
+    convertibile, restituisce la stringa originale (così 'NA' resta visibile).
+    """
+    if valore is None:
+        return None
+    s = str(valore).strip()
+    if not s or s.upper() == 'NA':
+        return s or None
+    normalized = s.replace(' ', '').replace('€', '')
+    if ',' in normalized and '.' in normalized:
+        normalized = normalized.replace('.', '').replace(',', '.')
+    elif ',' in normalized:
+        normalized = normalized.replace(',', '.')
+    try:
+        f = float(normalized)
+        return int(f) if f.is_integer() else f
+    except ValueError:
+        return s
 
 
-def estrai_contesto_intorno_s(testo: str, righe_contorno: int = 4) -> str:
-    """Individua il contesto intorno alla riga con 'S' isolata."""
-    righe = testo.splitlines()
-    indici_s = []
+def estrai_campi_ricevuta_pdf(pdf_path: Path) -> dict:
+    """Estrae data, numero, nome paziente e importo da una ricevuta PDF via Claude API.
 
-    for i, riga in enumerate(righe):
-        if re.match(r'^\s*S\s*$', riga):
-            indici_s.append(i)
+    Restituisce sempre un dict con le chiavi 'data', 'numero', 'nome_cliente',
+    'importo'. I campi non riconosciuti (o in caso di errore) valgono 'NA'.
+    """
+    default = {'data': 'NA', 'numero': 'NA', 'nome_cliente': 'NA', 'importo': 'NA'}
 
-    if not indici_s:
-        return testo
+    # I PDF delle ricevute sono spesso scansioni/immagini: PyPDF2 non ne estrae
+    # testo. Inviamo quindi il PDF stesso a Claude (content block "document",
+    # base64), così il modello lo legge come farebbe l'interfaccia di claude.ai.
+    try:
+        pdf_b64 = base64.standard_b64encode(pdf_path.read_bytes()).decode('ascii')
+    except Exception as e:
+        return {**default, 'errore': f'Lettura PDF fallita: {e}'}
 
-    idx = indici_s[0]
-    inizio = max(0, idx - righe_contorno)
-    fine = min(len(righe), idx + righe_contorno + 1)
-    blocco = righe[inizio:fine]
-
-    return "\n".join(blocco)
-
-
-RIGHE_DA_ESCLUDERE = [
-    "isabella eusebio",
-    "specialista in medicina",
-    "ritenuta d'acconto",
-    "p. iva",
-]
-
-def filtra_contesto(contesto: str) -> str:
-    """Rimuove dal contesto le righe che contengono stringhe da escludere (case-insensitive)."""
-    righe_filtrate = [
-        riga for riga in contesto.splitlines()
-        if not any(esclusa in riga.lower() for esclusa in RIGHE_DA_ESCLUDERE)
-    ]
-    return "\n".join(righe_filtrate)
-
-
-def chiama_claude_api_per_nome(contesto: str) -> dict:
-    """Chiama Claude API per estrarre nome e cognome dal contesto."""
-    contesto = filtra_contesto(contesto)
     api_key = os.getenv('ANTHROPIC_API_KEY')
     if not api_key:
-        return {'nome': '', 'cognome': '', 'nome_completo': '', 'errore': 'API key non configurata'}
+        return {**default, 'errore': 'API key non configurata'}
 
-    system_prompt = """Sei un assistente che estrae nome e cognome del paziente da testi di fatture/ricevute mediche italiane.
+    system_prompt = """Sei un estrattore di informazioni da file PDF di ricevute/fatture mediche italiane.
 
-Il testo che ricevi è il contesto intorno a una riga chiave del documento.
-Devi trovare il nome e cognome del PAZIENTE (non del medico).
+Devi estrarre dal documento in input:
+- data ricevuta (la data di emissione del documento)
+- numero ricevuta
+- nome e cognome del paziente
+- importo ricevuta
 
-Il medico è sempre "Dott.ssa Isabella EUSEBIO" o simile — ignoralo.
+Il medico è "Dott.ssa Isabella EUSEBIO" o simile: NON è il paziente, ignoralo.
 Il paziente è la persona che ha ricevuto la prestazione sanitaria.
 
-Rispondi SOLO con un oggetto JSON nel formato:
-{"nome": "...", "cognome": "...", "nome_completo": "..."}
+Se non riconosci uno dei campi, imposta il default "NA".
 
-Se non riesci a determinare con certezza nome o cognome, usa null per quel campo.
-Non aggiungere nulla prima o dopo il JSON."""
+Rispondi SOLO con un oggetto JSON in questo formato esatto, senza testo prima o dopo:
+{"data": "gg/mm/aaaa", "numero": "...", "nome_cliente": "Nome Cognome", "importo": "120,00"}
+
+Regole di formato:
+- data: formato gg/mm/aaaa
+- importo: solo il numero con separatore decimale e senza simbolo € (es. "120,00")
+- usa esattamente "NA" per ogni campo non determinabile."""
 
     payload = {
         "model": "claude-sonnet-4-6",
-        "max_tokens": 200,
+        "max_tokens": 300,
         "system": system_prompt,
         "messages": [
             {
                 "role": "user",
-                "content": f"Ecco il contesto estratto dalla fattura:\n\n{contesto}\n\nEstrai nome e cognome del paziente."
+                "content": [
+                    {
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": pdf_b64,
+                        },
+                    },
+                    {"type": "text", "text": "Estrai i campi richiesti dalla ricevuta."},
+                ],
             }
         ]
     }
@@ -489,187 +502,31 @@ Non aggiungere nulla prima o dopo il JSON."""
     try:
         with urllib.request.urlopen(req) as resp:
             risposta = json.loads(resp.read().decode("utf-8"))
-
         testo_risposta = risposta["content"][0]["text"].strip()
         testo_risposta = re.sub(r"```(?:json)?", "", testo_risposta).strip()
-
-        try:
-            result = json.loads(testo_risposta)
-            nome = result.get('nome') or ''
-            cognome = result.get('cognome') or ''
-            nome_completo = result.get('nome_completo') or ''
-            if not nome_completo and (nome or cognome):
-                nome_completo = f"{nome} {cognome}".strip()
-            return {
-                'nome': nome,
-                'cognome': cognome,
-                'nome_completo': nome_completo
-            }
-        except json.JSONDecodeError:
-            return {'nome': '', 'cognome': '', 'nome_completo': testo_risposta, 'errore_parsing': True}
+        result = json.loads(testo_risposta)
     except urllib.error.HTTPError as e:
         # Mostra il corpo della risposta dell'API (es. modello inesistente, auth) invece del solo codice HTTP
         try:
             dettaglio = e.read().decode("utf-8")
         except Exception:
             dettaglio = ""
-        return {'nome': '', 'cognome': '', 'nome_completo': '', 'errore': f"HTTP {e.code}: {dettaglio}"}
+        return {**default, 'errore': f"HTTP {e.code}: {dettaglio}"}
     except Exception as e:
-        return {'nome': '', 'cognome': '', 'nome_completo': '', 'errore': str(e)}
+        return {**default, 'errore': str(e)}
 
+    # Normalizza: ogni campo mancante/vuoto diventa "NA"
+    campi = {}
+    for chiave in ('data', 'numero', 'nome_cliente', 'importo'):
+        valore = result.get(chiave)
+        valore = str(valore).strip() if valore is not None else ''
+        campi[chiave] = valore if valore else 'NA'
 
-def parse_private_invoice_text(text: str) -> dict:
-    """Estrae i campi richiesti da un file .txt di fattura privata."""
-    import re
+    # Normalizza il nome paziente: iniziale maiuscola di ogni parola, resto minuscolo.
+    if campi['nome_cliente'] != 'NA':
+        campi['nome_cliente'] = campi['nome_cliente'].title()
 
-    data = {
-        'numero': '',
-        'data': '',
-        'importo': '',
-        'nome_cliente': ''
-    }
-
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    joined = '\n'.join(lines)
-
-    # Il numero è nella forma nn/yyyy: nn = 1 o 2 cifre, yyyy = un anno.
-    def numero_valido(valore: str) -> bool:
-        m = re.fullmatch(r'(\d{1,2})/(\d{4})', valore)
-        return bool(m) and 1900 <= int(m.group(2)) <= 2100
-
-    # Prima cerca tramite il marker corrente "RICEVUTA n."
-    numero_match = re.search(r'RICEVUTA\s*n\.\s*(\S+)', joined, re.IGNORECASE)
-    if numero_match and numero_valido(numero_match.group(1).strip()):
-        data['numero'] = numero_match.group(1).strip()
-    else:
-        # Se il marker non dà un valore nella forma attesa, cerca tutte le
-        # stringhe nel formato nn/yyyy nell'intero testo e prendi la prima valida.
-        for candidato in re.findall(r'\b\d{1,2}/\d{4}\b', joined):
-            if numero_valido(candidato):
-                data['numero'] = candidato
-                break
-
-    # Abbrevia l'anno alle ultime due cifre: es. 16/2026 -> 16/26
-    if data['numero']:
-        nn, anno = data['numero'].split('/')
-        data['numero'] = f'{nn}/{anno[2:]}'
-
-    # Analizza tutte e sole le stringhe di 8 cifre: la prima che corrisponde
-    # a una data valida nel formato ddmmyyyy è la data della fattura.
-    for candidato in re.findall(r'\b\d{8}\b', joined):
-        try:
-            d = datetime.strptime(candidato, '%d%m%Y')
-        except ValueError:
-            continue
-        data['data'] = d.strftime('%d/%m/%Y')
-        break
-
-    def converti_importo(valore: str):
-        """Converte una stringa in numero intero, gestendo i separatori. None se non convertibile."""
-        normalized = valore.replace(' ', '')
-        if ',' in normalized and '.' in normalized:
-            normalized = normalized.replace('.', '').replace(',', '.')
-        elif ',' in normalized:
-            normalized = normalized.replace(',', '.')
-        elif normalized.count('.') > 1:
-            normalized = normalized.replace('.', '')
-        try:
-            return int(float(normalized))
-        except ValueError:
-            return None
-
-    def importo_valido(n) -> bool:
-        """L'importo è valido se è compreso tra 50 e 150 ed è un multiplo di 10."""
-        return n is not None and 50 <= n <= 180 and n % 10 == 0
-
-    # Logica corrente: cerca l'importo nella riga dopo il marker "Riepilogo...".
-    importo_trovato = None
-    for idx, line in enumerate(lines):
-        if 'Riepilogo degli onorari e delle fatture'.lower() in line.lower() and idx + 1 < len(lines):
-            next_line = lines[idx + 1]
-            import_match = re.search(r'([0-9]+[\d\.,]*)', next_line)
-            if import_match:
-                candidato = converti_importo(import_match.group(1).strip())
-                if importo_valido(candidato):
-                    importo_trovato = candidato
-                break
-
-    # Se il candidato del marker non è un importo valido, continua a scorrere il
-    # testo finché trova una stringa convertibile in un numero valido.
-    if importo_trovato is None:
-        for candidato_str in re.findall(r'[0-9]+[\d\.,]*', joined):
-            candidato = converti_importo(candidato_str)
-            if importo_valido(candidato):
-                importo_trovato = candidato
-                break
-
-    data['importo'] = str(importo_trovato) if importo_trovato is not None else ''
-
-    def is_person_name(line: str) -> bool:
-        if re.search(r'\d', line):
-            return False
-        if len(line) < 5 or len(line) > 80:
-            return False
-        lower = line.lower()
-        blocked = [
-            'corso', 'via', 'alba', 'cn', 'rata', 'importo', 'totale', 'ricevuta',
-            'riepilogo', 'fattura', 'numero', 'cliente', 'spett', 'p.iva', 'cf',
-            'telefono', 'fax', 'iban', 'cognome', 'nome', 'isabella eusebio', 'p. iva',
-            'ritenuta d''acconto', 'specialista in medicina'
-        ]
-        if any(token in lower for token in blocked):
-            return False
-        words = [w for w in re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ'\-]+", line) if w]
-        if len(words) < 2 or len(words) > 3:
-            return False
-        capitalized = sum(1 for w in words if w[0].isupper() or w.isupper())
-        return capitalized >= 2
-
-    # Prova prima con Claude API
-    contesto = estrai_contesto_intorno_s(text)
-    claude_result = chiama_claude_api_per_nome(contesto)
-    if claude_result.get('nome_completo') and not claude_result.get('errore'):
-        data['nome_cliente'] = claude_result.get('nome_completo', '')
-    else:
-        # Fallback alla ricerca locale se Claude non ha trovato nulla
-        for idx, line in enumerate(lines):
-            if line.strip().upper() in ('S', 'S.'):
-                for offset in range(1, 6):
-                    next_index = idx + offset
-                    if next_index >= len(lines):
-                        break
-                    candidate = lines[next_index]
-                    if is_person_name(candidate):
-                        data['nome_cliente'] = candidate
-                        break
-                if data['nome_cliente']:
-                    break
-
-        if not data['nome_cliente']:
-            for idx, line in enumerate(lines):
-                if 'S' in line and len(line.strip()) == 1:
-                    for offset in range(1, 6):
-                        next_index = idx + offset
-                        if next_index >= len(lines):
-                            break
-                        candidate = lines[next_index]
-                        if is_person_name(candidate):
-                            data['nome_cliente'] = candidate
-                            break
-                    if data['nome_cliente']:
-                        break
-
-        if not data['nome_cliente']:
-            for line in lines:
-                if is_person_name(line):
-                    data['nome_cliente'] = line
-                    break
-
-    # Normalizza il nome: iniziale maiuscola di ogni parola, resto minuscolo.
-    if data['nome_cliente']:
-        data['nome_cliente'] = data['nome_cliente'].title()
-
-    return data
+    return campi
 
 
 @app.route('/api/process-private', methods=['POST'])
@@ -697,9 +554,9 @@ def process_private():
         def run_process():
             global execution_result
             try:
-                txt_files = sorted([p for p in Path(private_folder).glob('*.txt') if p.is_file()])
-                if not txt_files:
-                    execution_result = {'status': 'error', 'error': f'Nessun file .txt trovato in: {private_folder}', 'success': False}
+                pdf_files = sorted([p for p in Path(private_folder).glob('*.pdf') if p.is_file()])
+                if not pdf_files:
+                    execution_result = {'status': 'error', 'error': f'Nessun file .pdf trovato in: {private_folder}', 'success': False}
                     return
 
                 try:
@@ -719,25 +576,19 @@ def process_private():
 
                 ws = output_wb['Fatture Privati']
                 row = 2
-                for txt_file in txt_files:
-                    try:
-                        text = txt_file.read_text(encoding='utf-8', errors='ignore')
-                    except Exception as e:
-                        output_wb.close()
-                        execution_result = {'status': 'error', 'error': f'Errore leggendo {txt_file.name}: {str(e)}', 'success': False}
-                        return
-
-                    parsed = parse_private_invoice_text(text)
+                for pdf_file in pdf_files:
+                    # Tutti i campi (data, numero, nome, importo) sono estratti dal
+                    # PDF tramite Claude API; i campi non riconosciuti valgono 'NA'.
+                    parsed = estrai_campi_ricevuta_pdf(pdf_file)
                     # L'importo va scritto come numero: così la cella conserva il
                     # formato presente sul template invece di essere trattato come testo.
-                    importo_raw = parsed.get('importo', '')
-                    importo_cell = int(importo_raw) if importo_raw else None
+                    importo_cell = _importo_per_cella(parsed.get('importo'))
                     ws.cell(row=row, column=1).value = 'FATTURA'
-                    ws.cell(row=row, column=2).value = parsed.get('numero', '')
-                    ws.cell(row=row, column=3).value = parsed.get('data', '')
+                    ws.cell(row=row, column=2).value = parsed.get('numero', 'NA')
+                    ws.cell(row=row, column=3).value = parsed.get('data', 'NA')
                     ws.cell(row=row, column=4).value = importo_cell
-                    ws.cell(row=row, column=5).value = parsed.get('data', '')
-                    ws.cell(row=row, column=6).value = parsed.get('nome_cliente', '')
+                    ws.cell(row=row, column=5).value = parsed.get('data', 'NA')
+                    ws.cell(row=row, column=6).value = parsed.get('nome_cliente', 'NA')
                     row += 1
 
                 try:
